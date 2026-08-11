@@ -1,0 +1,521 @@
+{
+  "name": "Consultorio simple - Forms IA Calendar Airtable HITL - FINAL",
+  "flow": [
+    {
+      "id": 1,
+      "module": "google-sheets:watchRows",
+      "version": 2,
+      "parameters": {
+        "from": "drive",
+        "mode": "select",
+        "limit": 1,
+        "sheetId": "[SELECCIONAR_PESTANA_RESPUESTAS]",
+        "spreadsheetId": "",
+        "tableFirstRow": "A1:H1",
+        "includesHeaders": true,
+        "valueRenderOption": "FORMATTED_VALUE",
+        "dateTimeRenderOption": "FORMATTED_STRING"
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": {
+          "x": 0,
+          "y": 0,
+          "name": "1. Google Forms - nueva respuesta desde Sheets"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "module": "openai-gpt-3:CreateCompletion",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "model": "gpt-4o-mini",
+        "top_p": "1",
+        "select": "chat",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Sos un asistente administrativo de un consultorio medico. Validas solicitudes de turnos y detectas si requieren intervencion humana. No diagnostiques, no interpretes sintomas, no recomiendes tratamientos y no indiques medicamentos. Responde unicamente con un objeto JSON valido (formato json), sin Markdown, sin comillas triples y con exactamente estas claves: solicitud_valida (boolean), requiere_humano (boolean), observaciones (texto) y mensaje_paciente (texto).",
+            "imageDetail": "auto"
+          },
+          {
+            "role": "user",
+            "content": "Fecha y hora actual en Buenos Aires: {{formatDate(now; \"DD/MM/YYYY HH:mm\"; \"America/Argentina/Buenos_Aires\")}}\n\nDATOS DE LA SOLICITUD\nNombre y apellido: {{1.`1`}}\nEdad: {{1.`2`}}\nObra social: {{1.`3`}}\nCorreo electronico: {{1.`4`}}\nDia solicitado: {{1.`5`}}\nHorario solicitado: {{1.`6`}}\nPedido especial: {{1.`7`}}\n\nREGLAS\n- solicitud_valida es true solamente si el nombre contiene al menos nombre y apellido, la edad es un entero entre 0 y 120, obra social y correo estan informados, la fecha es futura y corresponde a lunes, martes, miercoles, jueves o viernes, y el horario es exactamente 16:00, 16:30, 17:00, 17:30, 18:00, 18:30, 19:00 o 19:30.\n- requiere_humano es true si Pedido especial contiene algo distinto de vacio, NO, NINGUNO o NINGUNA.\n- Si requiere_humano es true, no confirmes el turno automaticamente aunque los otros datos sean correctos.\n- Si los datos son incorrectos, indica brevemente que debe corregirse.\n- El mensaje debe ser administrativo, cordial y breve.\n\nResponde solamente con este objeto JSON valido en formato json, sin texto adicional: {\"solicitud_valida\":true,\"requiere_humano\":false,\"observaciones\":\"texto\",\"mensaje_paciente\":\"texto\"}",
+            "imageDetail": "auto"
+          }
+        ],
+        "max_tokens": "300",
+        "temperature": "0.1",
+        "n_completions": "1",
+        "response_format": "json_object"
+      },
+      "metadata": {
+        "designer": {
+          "x": 300,
+          "y": 0,
+          "name": "2. OpenAI - validar solicitud"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "module": "json:ParseJSON",
+      "version": 1,
+      "parameters": {
+        "type": ""
+      },
+      "mapper": {
+        "json": "{{2.result}}"
+      },
+      "metadata": {
+        "designer": {
+          "x": 600,
+          "y": 0,
+          "name": "3. JSON - parsear decision IA"
+        },
+        "parameters": [
+          {
+            "name": "type",
+            "type": "udt",
+            "label": "Data structure"
+          }
+        ],
+        "interface": [
+          {
+            "name": "solicitud_valida",
+            "type": "boolean",
+            "label": "solicitud_valida"
+          },
+          {
+            "name": "requiere_humano",
+            "type": "boolean",
+            "label": "requiere_humano"
+          },
+          {
+            "name": "observaciones",
+            "type": "text",
+            "label": "observaciones"
+          },
+          {
+            "name": "mensaje_paciente",
+            "type": "text",
+            "label": "mensaje_paciente"
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "parameters": {},
+      "mapper": null,
+      "metadata": {
+        "designer": {
+          "x": 900,
+          "y": 0,
+          "name": "4. Router - automatico, correccion o HITL"
+        }
+      },
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 5,
+              "module": "google-calendar:getFreeBusyInformation",
+              "version": 5,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "filter": {
+                "name": "Solicitud valida y sin HITL",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{3.solicitud_valida}}",
+                      "b": "true",
+                      "o": "boolean:equal"
+                    },
+                    {
+                      "a": "{{3.requiere_humano}}",
+                      "b": "false",
+                      "o": "boolean:equal"
+                    }
+                  ]
+                ]
+              },
+              "mapper": {
+                "timeMin": "{{parseDate(1.`5` + \"/\" + formatDate(now; \"YYYY\") + \"T\" + 1.`6`; \"D/M/YYYYTHH:mm\"; \"America/Argentina/Buenos_Aires\")}}",
+                "timeMax": "{{addMinutes(parseDate(1.`5` + \"/\" + formatDate(now; \"YYYY\") + \"T\" + 1.`6`; \"D/M/YYYYTHH:mm\"; \"America/Argentina/Buenos_Aires\"); 30)}}",
+                "item": [
+                  {
+                    "id": "[GOOGLE_CALENDAR_ID]"
+                  }
+                ]
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1200,
+                  "y": -260,
+                  "name": "5. Google Calendar - comprobar disponibilidad"
+                }
+              }
+            },
+            {
+              "id": 6,
+              "module": "builtin:BasicRouter",
+              "version": 1,
+              "parameters": {},
+              "mapper": null,
+              "metadata": {
+                "designer": {
+                  "x": 1500,
+                  "y": -260,
+                  "name": "6. Router - disponible u ocupado"
+                }
+              },
+              "routes": [
+                {
+                  "flow": [
+                    {
+                      "id": 7,
+                      "module": "google-calendar:createAnEvent",
+                      "version": 5,
+                      "parameters": {
+                        "__IMTCONN__": 0
+                      },
+                      "filter": {
+                        "name": "Horario disponible",
+                        "conditions": [
+                          [
+                            {
+                              "a": "{{length(get(get(first(toArray(5.calendars)); \"value\"); \"busy\"))}}",
+                              "b": "0",
+                              "o": "number:equal"
+                            }
+                          ]
+                        ]
+                      },
+                      "mapper": {
+                        "end": "{{addMinutes(parseDate(1.`5` + \"/\" + formatDate(now; \"YYYY\") + \"T\" + 1.`6`; \"D/M/YYYYTHH:mm\"; \"America/Argentina/Buenos_Aires\"); 30)}}",
+                        "start": "{{parseDate(1.`5` + \"/\" + formatDate(now; \"YYYY\") + \"T\" + 1.`6`; \"D/M/YYYYTHH:mm\"; \"America/Argentina/Buenos_Aires\")}}",
+                        "select": "detail",
+                        "summary": "Turno consultorio - {{1.`1`}}",
+                        "calendar": "[GOOGLE_CALENDAR_ID]",
+                        "location": "Consultorio",
+                        "visibility": "private",
+                        "allDayEvent": false,
+                        "description": "Paciente: {{1.`1`}}\nEdad: {{1.`2`}}\nObra social: {{1.`3`}}\nCorreo: {{1.`4`}}\nPedido especial: {{1.`7`}}",
+                        "attendees": [
+                          {
+                            "displayName": "{{1.`1`}}",
+                            "email": "{{1.`4`}}"
+                          }
+                        ],
+                        "sendUpdates": "all",
+                        "transparency": "opaque",
+                        "conferenceDate": false,
+                        "guestsCanModify": false,
+                        "guestsCanInviteOthers": false,
+                        "guestsCanSeeOtherGuests": false
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 1800,
+                          "y": -440,
+                          "name": "7. Google Calendar - crear turno"
+                        }
+                      }
+                    },
+                    {
+                      "id": 8,
+                      "module": "http:MakeRequest",
+                      "version": 4,
+                      "parameters": {
+                        "authenticationType": "noAuth"
+                      },
+                      "mapper": {
+                        "url": "https://api.airtable.com/v0/[AIRTABLE_BASE_ID]/[SOLICITUDES_TABLE_ID]",
+                        "method": "post",
+                        "headers": [
+                          {
+                            "name": "Authorization",
+                            "value": "Bearer [AIRTABLE_PAT]"
+                          }
+                        ],
+                        "contentType": "json",
+                        "inputMethod": "jsonString",
+                        "jsonStringBodyContent": "{\"records\":[{\"fields\":{\"Solicitud ID\":\"{{escapeJSON(1.`0`)}}\",\"Nombre\":\"{{escapeJSON(1.`1`)}}\",\"Edad\":\"{{escapeJSON(1.`2`)}}\",\"Obra Social\":\"{{escapeJSON(1.`3`)}}\",\"Email\":\"{{escapeJSON(1.`4`)}}\",\"Fecha solicitada\":\"{{escapeJSON(1.`5`)}}\",\"Hora solicitada\":\"{{escapeJSON(1.`6`)}}\",\"Otra consulta\":\"{{escapeJSON(1.`7`)}}\",\"Estado\":\"TURNO_AGENDADO\",\"Observaciones IA\":\"{{escapeJSON(3.observaciones)}}\",\"Respuesta IA\":\"{{escapeJSON(3.mensaje_paciente)}}\",\"Google Event ID\":\"{{escapeJSON(7.id)}}\"}}],\"typecast\":true}",
+                        "parseResponse": true
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 2100,
+                          "y": -440,
+                          "name": "8. Airtable - guardar turno agendado"
+                        }
+                      }
+                    },
+                    {
+                      "id": 9,
+                      "module": "google-email:sendAnEmail",
+                      "version": 4,
+                      "parameters": {
+                        "__IMTCONN__": 0
+                      },
+                      "mapper": {
+                        "to": [
+                          "{{1.`4`}}"
+                        ],
+                        "subject": "Turno confirmado en el consultorio",
+                        "bodyType": "rawHtml",
+                        "content": "<p>Hola {{1.`1`}},</p><p><strong>Su turno fue agendado correctamente.</strong></p><p>Dia: {{1.`5`}}<br>Hora: {{1.`6`}}<br>Duracion: 30 minutos.</p><p>Tambien recibira la invitacion de Google Calendar.</p>"
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 2400,
+                          "y": -440,
+                          "name": "9. Gmail V4 - confirmar turno"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "flow": [
+                    {
+                      "id": 10,
+                      "module": "http:MakeRequest",
+                      "version": 4,
+                      "parameters": {
+                        "authenticationType": "noAuth"
+                      },
+                      "filter": {
+                        "name": "Horario ocupado",
+                        "conditions": [
+                          [
+                            {
+                              "a": "{{length(get(get(first(toArray(5.calendars)); \"value\"); \"busy\"))}}",
+                              "b": "0",
+                              "o": "number:greater"
+                            }
+                          ]
+                        ]
+                      },
+                      "mapper": {
+                        "url": "https://api.airtable.com/v0/[AIRTABLE_BASE_ID]/[SOLICITUDES_TABLE_ID]",
+                        "method": "post",
+                        "headers": [
+                          {
+                            "name": "Authorization",
+                            "value": "Bearer [AIRTABLE_PAT]"
+                          }
+                        ],
+                        "contentType": "json",
+                        "inputMethod": "jsonString",
+                        "jsonStringBodyContent": "{\"records\":[{\"fields\":{\"Solicitud ID\":\"{{escapeJSON(1.`0`)}}\",\"Nombre\":\"{{escapeJSON(1.`1`)}}\",\"Edad\":\"{{escapeJSON(1.`2`)}}\",\"Obra Social\":\"{{escapeJSON(1.`3`)}}\",\"Email\":\"{{escapeJSON(1.`4`)}}\",\"Fecha solicitada\":\"{{escapeJSON(1.`5`)}}\",\"Hora solicitada\":\"{{escapeJSON(1.`6`)}}\",\"Otra consulta\":\"{{escapeJSON(1.`7`)}}\",\"Estado\":\"HORARIO_OCUPADO\",\"Observaciones IA\":\"{{escapeJSON(3.observaciones)}}\",\"Respuesta IA\":\"El horario solicitado ya esta ocupado. Complete nuevamente el formulario y elija otro horario.\"}}],\"typecast\":true}",
+                        "parseResponse": true
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 1800,
+                          "y": -80,
+                          "name": "10. Airtable - guardar horario ocupado"
+                        }
+                      }
+                    },
+                    {
+                      "id": 11,
+                      "module": "google-email:sendAnEmail",
+                      "version": 4,
+                      "parameters": {
+                        "__IMTCONN__": 0
+                      },
+                      "mapper": {
+                        "to": [
+                          "{{1.`4`}}"
+                        ],
+                        "subject": "El horario solicitado no esta disponible",
+                        "bodyType": "rawHtml",
+                        "content": "<p>Hola {{1.`1`}},</p><p>El turno solicitado para el {{1.`5`}} a las {{1.`6`}} ya esta ocupado.</p><p>Por favor complete nuevamente el formulario y seleccione otro horario.</p><p><a href=\"[URL_FORMULARIO]\">Elegir otro horario</a></p>"
+                      },
+                      "metadata": {
+                        "designer": {
+                          "x": 2100,
+                          "y": -80,
+                          "name": "11. Gmail V4 - pedir otro horario"
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 12,
+              "module": "http:MakeRequest",
+              "version": 4,
+              "parameters": {
+                "authenticationType": "noAuth"
+              },
+              "filter": {
+                "name": "Datos para corregir",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{3.solicitud_valida}}",
+                      "b": "false",
+                      "o": "boolean:equal"
+                    },
+                    {
+                      "a": "{{3.requiere_humano}}",
+                      "b": "false",
+                      "o": "boolean:equal"
+                    }
+                  ]
+                ]
+              },
+              "mapper": {
+                "url": "https://api.airtable.com/v0/[AIRTABLE_BASE_ID]/[SOLICITUDES_TABLE_ID]",
+                "method": "post",
+                "headers": [
+                  {
+                    "name": "Authorization",
+                    "value": "Bearer [AIRTABLE_PAT]"
+                  }
+                ],
+                "contentType": "json",
+                "inputMethod": "jsonString",
+                "jsonStringBodyContent": "{\"records\":[{\"fields\":{\"Solicitud ID\":\"{{escapeJSON(1.`0`)}}\",\"Nombre\":\"{{escapeJSON(1.`1`)}}\",\"Edad\":\"{{escapeJSON(1.`2`)}}\",\"Obra Social\":\"{{escapeJSON(1.`3`)}}\",\"Email\":\"{{escapeJSON(1.`4`)}}\",\"Fecha solicitada\":\"{{escapeJSON(1.`5`)}}\",\"Hora solicitada\":\"{{escapeJSON(1.`6`)}}\",\"Otra consulta\":\"{{escapeJSON(1.`7`)}}\",\"Estado\":\"PENDIENTE_CORRECCION\",\"Observaciones IA\":\"{{escapeJSON(3.observaciones)}}\",\"Respuesta IA\":\"{{escapeJSON(3.mensaje_paciente)}}\"}}],\"typecast\":true}",
+                "parseResponse": true
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1200,
+                  "y": 180,
+                  "name": "12. Airtable - guardar correccion"
+                }
+              }
+            },
+            {
+              "id": 13,
+              "module": "google-email:sendAnEmail",
+              "version": 4,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "mapper": {
+                "to": [
+                  "{{1.`4`}}"
+                ],
+                "subject": "Necesitamos corregir su solicitud de turno",
+                "bodyType": "rawHtml",
+                "content": "<p>Hola {{1.`1`}},</p><p>{{3.mensaje_paciente}}</p><p><strong>Informacion para revisar:</strong> {{3.observaciones}}</p><p>Complete nuevamente el formulario:</p><p><a href=\"[URL_FORMULARIO]\">Corregir solicitud</a></p>"
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1500,
+                  "y": 180,
+                  "name": "13. Gmail V4 - pedir correccion"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 14,
+              "module": "http:MakeRequest",
+              "version": 4,
+              "parameters": {
+                "authenticationType": "noAuth"
+              },
+              "filter": {
+                "name": "Requiere intervencion humana",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{3.requiere_humano}}",
+                      "b": "true",
+                      "o": "boolean:equal"
+                    }
+                  ]
+                ]
+              },
+              "mapper": {
+                "url": "https://api.airtable.com/v0/[AIRTABLE_BASE_ID]/[SOLICITUDES_TABLE_ID]",
+                "method": "post",
+                "headers": [
+                  {
+                    "name": "Authorization",
+                    "value": "Bearer [AIRTABLE_PAT]"
+                  }
+                ],
+                "contentType": "json",
+                "inputMethod": "jsonString",
+                "jsonStringBodyContent": "{\"records\":[{\"fields\":{\"Solicitud ID\":\"{{escapeJSON(1.`0`)}}\",\"Nombre\":\"{{escapeJSON(1.`1`)}}\",\"Edad\":\"{{escapeJSON(1.`2`)}}\",\"Obra Social\":\"{{escapeJSON(1.`3`)}}\",\"Email\":\"{{escapeJSON(1.`4`)}}\",\"Fecha solicitada\":\"{{escapeJSON(1.`5`)}}\",\"Hora solicitada\":\"{{escapeJSON(1.`6`)}}\",\"Otra consulta\":\"{{escapeJSON(1.`7`)}}\",\"Estado\":\"PENDIENTE_HITL\",\"Observaciones IA\":\"{{escapeJSON(3.observaciones)}}\",\"Respuesta IA\":\"La solicitud requiere revision de la doctora.\"}}],\"typecast\":true}",
+                "parseResponse": true
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1200,
+                  "y": 500,
+                  "name": "14. Airtable - guardar HITL"
+                }
+              }
+            },
+            {
+              "id": 15,
+              "module": "google-email:sendAnEmail",
+              "version": 4,
+              "parameters": {
+                "__IMTCONN__": 0
+              },
+              "mapper": {
+                "to": [
+                  "[EMAIL_MEDICO]"
+                ],
+                "subject": "HITL - Pedido especial de {{1.`1`}}",
+                "bodyType": "rawHtml",
+                "content": "<p><strong>Solicitud que requiere intervencion humana</strong></p><p><strong>Paciente:</strong> {{1.`1`}}<br><strong>Edad:</strong> {{1.`2`}}<br><strong>Obra social:</strong> {{1.`3`}}<br><strong>Correo:</strong> {{1.`4`}}<br><strong>Dia solicitado:</strong> {{1.`5`}}<br><strong>Horario:</strong> {{1.`6`}}</p><p><strong>Pedido especial:</strong><br>{{1.`7`}}</p><p><strong>Observaciones de la IA:</strong><br>{{3.observaciones}}</p><p>La solicitud quedo registrada en Airtable como <strong>PENDIENTE_HITL</strong>. No se creo un turno automaticamente.</p>"
+              },
+              "metadata": {
+                "designer": {
+                  "x": 1500,
+                  "y": 500,
+                  "name": "15. Gmail V4 - avisar a la doctora"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": false,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": true,
+      "confidential": true,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": {
+      "orphans": []
+    },
+    "zone": "us2.make.com"
+  }
+}
