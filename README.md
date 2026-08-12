@@ -25,3 +25,5 @@ Automatización desarrollada con Google Forms, Google Sheets, OpenAI, Google Cal
 ## Seguridad
 
 El repositorio no contiene claves de API, tokens ni datos clínicos reales.
+Video Explicativo 
+https://drive.google.com/file/d/12GtjJCUdbgU_ufqNElbjUVH1Pog_qB8t/view?usp=sharing
